@@ -105,30 +105,52 @@ small { font-size: 12px; }
 .battle-meta { padding: 9px 12px; flex-wrap: wrap; }
 .battle-meta p { font-size: 12px; }
 .arena {
-  flex: 1; min-height: 148px; max-height: 46dvh; display: grid; align-content: center; gap: clamp(10px, 5dvh, 44px); padding: 10px 12px;
-  background: linear-gradient(#18131128, #1514118a), url("./march.svg") center / cover;
-  border-block: 1px solid #664734;
+  flex: 1; min-height: 180px; position: relative; isolation: isolate; overflow: hidden;
+  background: radial-gradient(ellipse at 50% 55%, #25221e, #0e0d0c 75%);
+  border-block: 1px solid #5e4838;
 }
-.crests { display: flex; justify-content: center; gap: 6px; align-items: center; text-align: center; }
-.crest { flex: 0 1 33%; display: grid; justify-items: center; gap: 5px; }
-.crest-target { padding: 0; background: none; border: none; }
-.crest i {
-  display: grid; place-items: center; width: 55px; height: 55px; border: 1px solid #9d6b4a; border-radius: 48% 48% 38% 38%;
-  font: normal 29px Georgia, serif; background: radial-gradient(#483128, #231b18 72%); color: #e7a581;
-  box-shadow: 0 7px 14px #0b0a09a0;
+.map-tiles {
+  position: absolute; inset: 0; display: grid; grid-template-columns: repeat(var(--columns), minmax(0, 1fr));
+  grid-template-rows: repeat(var(--rows), minmax(0, 1fr));
 }
-.crest.selected { background: none; }
-.crest.selected i { box-shadow: 0 0 0 2px #efbb79, 0 0 22px #e3884e87; }
-.crest.casting i { border-color: #ffb38e; animation: heat .7s infinite alternate; }
-.crest.dead { opacity: .27; }
-.crest small { color: #f0cbb7; font-size: 10px; font-weight: 750; background: #17130fbb; padding: 1px 4px; border-radius: 3px; }
-.company-line .crest i { background: radial-gradient(#3b4133, #1e221c 72%); color: #d0d8b3; border-color: #849468; }
-.company-line .crest small { color: #d0d8b3; }
-.company-line .echo i { background: #2b3a3a; color: #bde1e2; border-color: #84a6a7; }
-.company-line .striking i { animation: strike .24s ease-out; }
+.tile { display: grid; place-items: center; }
+.tile.wall { background: repeating-linear-gradient(132deg, #0e0d0d 0 8px, #121110 8px 9px, #0e0d0d 9px 15px); }
+.tile.floor { background: #1c1916; border: 1px solid #231f1a; }
+.tile.floor.seen { background: linear-gradient(145deg, #4c3c31, #342b24); border-color: #594536; }
+.tile.floor.seen:nth-child(3n) { background: linear-gradient(158deg, #46382e, #312a24); }
+.tile.exit { color: #978257; font-weight: 900; }
+.tile.exit.seen { color: #f2c282; background: #523d28; }
+.token {
+  --size: clamp(27px, 8vw, 36px); position: absolute; z-index: 2;
+  width: var(--size); min-height: 0; padding: 0; border: 0; background: none !important;
+  transform: translate(calc(-50% + var(--offset, 0px)), -50%);
+  transition: top .16s ease-out, left .16s ease-out;
+}
+.token i {
+  display: grid; place-items: center; width: 100%; aspect-ratio: 1; border: 1px solid #d08764;
+  border-radius: 48% 48% 42% 42%; color: #ffd3ae; font: normal 19px Georgia, serif;
+  background: radial-gradient(#703c2d, #351f1a 78%); box-shadow: 0 3px 7px #0b0a09a0;
+}
+.token .meter { height: 3px; margin: -1px 4px 0; }
+.foe-token { z-index: 4; }
+.foe-token::after { content: ""; position: absolute; inset: -6px; }
+.token.selected { z-index: 5; }
+.token.selected i { box-shadow: 0 0 0 2px #efbb79, 0 0 20px #e3884e87; }
+.token.casting i { border-color: #ffb38e; animation: heat .7s infinite alternate; }
+.token.dead { opacity: .25; z-index: 1; pointer-events: none; }
+.foe-token.hit i { filter: brightness(1.65); }
+.ally-token { pointer-events: none; }
+.ally-token i { background: radial-gradient(#475a37, #22281c 76%); color: #dfebc0; border-color: #9aa981; }
+.ally-token .meter > span { background: #9bb781; }
+.ally-token.echo i { background: #2b3a3a; color: #bde1e2; border-color: #84a6a7; }
+.ally-token.striking i { animation: strike .24s ease-out; }
 @keyframes heat { to { box-shadow: 0 0 20px #ff885ea0; } }
 @keyframes strike { 40% { transform: translateY(-5px); filter: brightness(1.7); } }
 .battle-controls { display: grid; gap: 8px; padding: 9px 10px 11px; background: #171511; }
+.targeting { min-height: 30px; color: var(--muted); }
+.targeting .pause { min-height: 30px; }
+.battle-controls .enemies { min-height: 58px; }
+.battle-controls .enemies[hidden] { display: grid !important; visibility: hidden; }
 .telegraph { min-height: 77px; padding: 7px 9px; display: grid; gap: 2px; align-content: center; border: 1px solid var(--edge); border-radius: 7px; background: #211c17; }
 .telegraph.danger { background: #43221b; border-color: #d07b58; }
 .telegraph strong { font: bold 17px Georgia, serif; line-height: 1.15; }
@@ -157,9 +179,11 @@ small { font-size: 12px; }
 #error { position: fixed; z-index: 5; bottom: 0; left: 50%; width: min(100%, 530px); transform: translateX(-50%); background: #56261e; padding: 16px; }
 #error button { margin-top: 8px; }
 @media (max-height: 650px) {
-  .arena { min-height: 112px; max-height: 25dvh; gap: 8px; }
-  .crest i { width: 40px; height: 40px; font-size: 22px; }
-  .crest small { display: none; }
+  .arena { min-height: 175px; }
+  .token { --size: 25px; }
+  .token i { font-size: 15px; }
+  .telegraph { min-height: 65px; }
+  .enemy { min-height: 51px; padding-block: 4px; gap: 2px; }
   .battle-controls { gap: 5px; }
 }
 @media (prefers-reduced-motion: reduce) {

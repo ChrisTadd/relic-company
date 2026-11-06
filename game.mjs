@@ -1,9 +1,13 @@
 import { HEROES, FOES, TIERS, MODIFIERS, HAZARDS, PERKS, FORMATIONS, LOOT } from './data.mjs';
+import { inRange, makeMap, nearest, nextTile } from './map.mjs';
 
 export const STEP = 0.1;
 export const STARTERS = ['warden', 'duelist', 'medic', 'hunter'];
 export const OFFLINE_INTERVAL = 300_000;
 const ROUND_LIMIT = 48;
+const SIGHT = 5;
+const allyRange = { warden: 1, duelist: 1, medic: 3, hunter: 4, queen: 3 };
+const foeRange = { guard: 1, healer: 3, hound: 1, seer: 3, boss: 1 };
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const living = units => units.filter(unit => unit.hp > 0);
 const lowest = units => living(units).sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)[0];
@@ -153,7 +157,8 @@ function beginEncounter(run, encounter) {
     return { key, id: index, hp: maxHp, maxHp, barrier: run.plan.modifier === 'ward' ? 19 : 0,
       exposed: 0, damage: FOES[key].damage * tier.damage * intensity };
   });
-  run.focus = run.enemies.find(foe => foe.key === 'guard')?.id ?? 0;
+  run.map = null;
+  prepareMap(run);
   for (const ally of run.party) {
     if (ally.echo) {
       ally.hp = 0;
@@ -162,6 +167,39 @@ function beginEncounter(run, encounter) {
     if (ally.hp > 0 && run.index > 0) heal(ally, ally.maxHp * 0.24);
     ally.cd = 0;
     ally.ward = 0;
+  }
+}
+
+export function prepareMap(run) {
+  if (run.map) return;
+  const { seed, tier, mode, rung } = run.plan;
+  run.map = makeMap(random([seed, tier, mode, rung, run.index, run.path, 'terrain'].join('|')), run.enemies.length);
+  run.focus = null;
+  run.engagedAt = null;
+  run.nextMove = run.time + 0.3;
+  run.nextFoeMove = run.time + 0.8;
+  run.cast = null;
+  run.party.forEach((ally, i) => {
+    ally.cell = run.map.starts[i];
+    ally.target = null;
+    ally.struck = -10;
+  });
+  run.enemies.forEach((foe, i) => {
+    foe.cell = run.map.spawns[i];
+    foe.hit = -10;
+    foe.visible = false;
+  });
+  reveal(run);
+}
+
+function reveal(run) {
+  const allies = living(run.party);
+  const sees = cell => allies.some(ally => inRange(run.map, ally.cell, cell, SIGHT));
+  run.map.seen.forEach((seen, cell) => {
+    if (!seen && run.map.floor[cell] && sees(cell)) run.map.seen[cell] = true;
+  });
+  for (const foe of run.enemies) {
+    if (foe.hp > 0) foe.visible ||= sees(foe.cell);
   }
 }
 
@@ -190,18 +228,24 @@ function notice(run, text, kind = '') {
 }
 
 export function focused(run) {
-  return run.enemies.find(foe => foe.id === run.focus && foe.hp > 0) ?? living(run.enemies)[0];
+  const lead = living(run.party)[0];
+  return lead ? targetFor(run, lead) : null;
+}
+
+function targetFor(run, ally) {
+  const visible = run.enemies.filter(foe => foe.visible && foe.hp > 0);
+  return visible.find(foe => foe.id === run.focus) ?? nearest(ally.cell, visible);
 }
 
 export function selectTarget(run, id) {
-  if (run?.stage !== 'combat' || !run.enemies.some(foe => foe.id === id && foe.hp > 0)) return false;
+  if (run?.stage !== 'combat' || (id !== null && !run.enemies.some(foe => foe.id === id && foe.hp > 0 && foe.visible))) return false;
   run.focus = id;
   return true;
 }
 
 export function bodyguard(run, foe) {
-  if (run.plan.modifier !== 'guard' || foe?.key === 'guard') return null;
-  return living(run.enemies).find(enemy => enemy.key === 'guard') ?? null;
+  if (run.plan.modifier !== 'guard' || !foe || foe.key === 'guard') return null;
+  return living(run.enemies).find(enemy => enemy.key === 'guard' && inRange(run.map, enemy.cell, foe.cell, 4)) ?? null;
 }
 
 function hurtEnemy(run, target, damage, pierce = false) {
@@ -213,6 +257,7 @@ function hurtEnemy(run, target, damage, pierce = false) {
     blow -= absorbed;
   }
   foe.hp = Math.max(0, foe.hp - blow);
+  foe.hit = run.time;
   if (foe.hp === 0 && run.cast?.id === foe.id) {
     run.cast = null;
     run.nextCast = run.time + 3;
@@ -243,13 +288,21 @@ function hurtAlly(run, ally, damage) {
   }
 }
 
+export function abilityReady(run, ally) {
+  if (ally?.hp <= 0 || !ally || ally.cd > 0 || ally.echo || run.engagedAt === null || !living(run.enemies).length) return false;
+  if (ally.key === 'duelist') return !!run.cast && run.cast.id >= 0;
+  if (ally.key === 'hunter') {
+    const target = targetFor(run, ally);
+    return !!target && inRange(run.map, ally.cell, target.cell, 6);
+  }
+  return true;
+}
+
 export function activate(run, id) {
   if (run?.stage !== 'combat') return false;
-  const ally = living(run.party).find(unit => unit.key === id);
-  const target = focused(run);
-  if (!ally || ally.cd > 0 || ally.echo || !target) return false;
+  const ally = run.party.find(unit => unit.key === id);
+  if (!abilityReady(run, ally)) return false;
   const { spec } = ally;
-  if (id === 'duelist' && (!run.cast || run.cast.id < 0)) return false;
   ally.cd = HEROES[id].speed;
   notice(run, HEROES[id].ability, 'good');
   switch (id) {
@@ -274,7 +327,7 @@ export function activate(run, id) {
       if (spec === 1) ally.cd *= 0.72;
       break;
     case 'hunter':
-      hurtEnemy(run, target, ally.damage * (spec === 0 ? 4.3 : 3.1), true);
+      hurtEnemy(run, targetFor(run, ally), ally.damage * (spec === 0 ? 4.3 : 3.1), true);
       if (spec === 1) ally.cd *= 0.72;
       break;
     case 'queen':
@@ -285,7 +338,8 @@ export function activate(run, id) {
 }
 
 function createCast(run) {
-  const enemies = living(run.enemies);
+  const enemies = living(run.enemies).filter(foe => foe.visible);
+  if (!enemies.length) return;
   const caster = enemies[run.castCount % enemies.length];
   const tier = run.plan.tier;
   const hazard = HAZARDS[run.encounter.hazard];
@@ -333,8 +387,37 @@ function resolveCast(run) {
   }
 }
 
+function moveUnits(run) {
+  if (run.time >= run.nextMove) {
+    const activeFocus = run.enemies.some(foe => foe.visible && foe.hp > 0 && foe.id === run.focus);
+    run.nextMove = run.time + (activeFocus ? 0.2 : 0.3);
+    for (const ally of living(run.party)) {
+      const target = targetFor(run, ally);
+      ally.target = target?.id ?? null;
+      if (!target || !inRange(run.map, ally.cell, target.cell, allyRange[ally.key])) {
+        ally.cell = nextTile(run.map, ally.cell, target?.cell ?? run.map.exit);
+      }
+    }
+    reveal(run);
+  }
+  if (run.time >= run.nextFoeMove) {
+    run.nextFoeMove = run.time + 0.8;
+    const allies = living(run.party);
+    for (const foe of living(run.enemies)) {
+      if (!foe.visible || foe.id === run.cast?.id || foe.key === 'healer') continue;
+      const target = nearest(foe.cell, allies);
+      if (target && !inRange(run.map, foe.cell, target.cell, foeRange[foe.key])) {
+        foe.cell = nextTile(run.map, foe.cell, target.cell);
+      }
+    }
+    reveal(run);
+  }
+}
+
 export function tick(run) {
   if (run?.stage !== 'combat') return null;
+  if (!living(run.party).length) return 'loss';
+  prepareMap(run);
   run.time = Math.round((run.time + STEP) * 10) / 10;
   run.guard = remaining(run.guard, STEP);
   run.smoke = remaining(run.smoke, STEP);
@@ -343,19 +426,28 @@ export function tick(run) {
     ally.cd = remaining(ally.cd, STEP * (run.perks.includes('haste') ? 1.25 : 1));
     ally.ward = remaining(ally.ward, STEP);
   });
-  if (run.time >= run.nextStrike) {
-    run.nextStrike = run.time + 2.05;
+  moveUnits(run);
+  if (run.engagedAt === null && focused(run)) {
+    run.engagedAt = run.time;
+    run.nextStrike = Math.max(run.nextStrike, run.time + 0.4);
+    run.nextCast = Math.max(run.nextCast, run.time + 1.5);
+    notice(run, 'Enemies sighted', 'bad');
+  }
+  if (run.time >= run.nextStrike && focused(run)) {
+    run.nextStrike = run.time + 1.9;
     const queen = run.party.find(ally => ally.key === 'queen');
     for (const ally of living(run.party)) {
-      const target = focused(run);
-      if (!target) break;
+      const target = targetFor(run, ally);
+      if (!target || !inRange(run.map, ally.cell, target.cell, allyRange[ally.key])) continue;
       const force = (ally.key === 'warden' && ally.spec === 1 ? 1.28 : 1)
         * (run.perks.includes('keen') ? 1.2 : 1) * (run.smoke > 0 ? 0.65 : 1)
         * (ally.echo ? (queen?.spec === 1 ? 0.95 : 0.68) : 1);
       hurtEnemy(run, target, ally.damage * force);
+      ally.struck = run.time;
     }
   }
-  if (!focused(run)) {
+  if (!living(run.enemies).length) {
+    if (!living(run.party).some(ally => ally.cell === run.map.exit)) return null;
     if (run.index === 2) return 'win';
     run.stage = 'interlude';
     run.pending = { perk: null, path: null };
@@ -365,10 +457,12 @@ export function tick(run) {
   else if (!run.cast && run.time >= run.nextCast) createCast(run);
   if (run.time >= run.nextAttack) {
     run.nextAttack = run.time + 3.4;
-    const target = living(run.party)[0];
-    if (target) hurtAlly(run, target, living(run.enemies).reduce((total, enemy) => total + enemy.damage, 0));
+    for (const foe of living(run.enemies)) {
+      const target = living(run.party).find(ally => inRange(run.map, ally.cell, foe.cell, foeRange[foe.key]));
+      if (target) hurtAlly(run, target, foe.damage);
+    }
   }
-  if (!living(run.party).length || run.time >= ROUND_LIMIT) return 'loss';
+  if (!living(run.party).length || (run.engagedAt !== null && run.time - run.engagedAt >= ROUND_LIMIT)) return 'loss';
   return null;
 }
 

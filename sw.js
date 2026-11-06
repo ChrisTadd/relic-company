@@ -1,6 +1,6 @@
-const BUILD = 'local-v3';
+const BUILD = 'local-v4';
 const INTEGRITY = null;
-const FILES = ["index.html","style.css","app.mjs","game.mjs","data.mjs","backup.mjs","manifest.webmanifest","crest.svg","march.svg","icon-192.png","icon-512.png"];
+const FILES = ["index.html","style.css","app.mjs","game.mjs","map.mjs","data.mjs","backup.mjs","manifest.webmanifest","crest.svg","march.svg","icon-192.png","icon-512.png"];
 const SCOPE = new URL(self.registration.scope);
 const PREFIX = 'relic-company:' + SCOPE.pathname + ':';
 const CACHE = PREFIX + BUILD;

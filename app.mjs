@@ -1,11 +1,13 @@
 import { REGION, HEROES, FOES, TIERS, MODIFIERS, HAZARDS, PERKS, LOOT } from './data.mjs';
 import { readBackup } from './backup.mjs';
+import { cellX, cellY } from './map.mjs';
 import {
   STEP, OFFLINE_INTERVAL, contract, newSave, level, gearPrice, hqPrice, offlineCoins, upgrade,
-  startRun, availablePerks, nextEncounter, focused, bodyguard, selectTarget, activate, tick, settle,
+  startRun, availablePerks, nextEncounter, prepareMap, bodyguard, selectTarget, abilityReady, activate, tick, settle,
 } from './game.mjs';
 
 const KEY = 'relic-company.save.v1';
+const android = window.RelicAndroid;
 const UPDATE_KEY = 'relic-company.auto-update';
 const CHECK_INTERVAL = 10 * 60_000;
 const screen = document.querySelector('#screen');
@@ -36,11 +38,11 @@ const targets = {
 let save, seed, tier, mode, view, paused;
 let lastScreen = '';
 let failed = null;
-let ready = false;
+let ready = !!android;
 let controller = false;
 let releasing;
 let claiming = false;
-let installed = matchMedia('(display-mode: standalone)').matches;
+let installed = !!android || matchMedia('(display-mode: standalone)').matches;
 let installPrompt;
 let forcedDrop = null;
 let uiMessage = '';
@@ -102,7 +104,7 @@ function contractPage() {
     + '<button class="minor" type="submit">Set</button>' + action('newseed', 'Reroll', 'class="minor"') + '</form>'
     + (uiMessage ? '<small class="gold" role="status">' + uiMessage + '</small>' : '')
     + (installPrompt ? action('install', 'Install Relic Company', 'class="minor"') : '')
-    + '<small class="muted">The lead takes most strikes. Tap enemies to focus attacks, then watch cast bars to time interrupts and defence. Survivors recover 24% health at camp.</small></div>';
+    + '<small class="muted">Your company explores the ruins and attacks the nearest foes. Tap a foe to rush it together, or choose Auto to split targets again.</small></div>';
 }
 
 function companyPage() {
@@ -155,18 +157,21 @@ function journalPage() {
 }
 
 function combatPage(run) {
+  const { map } = run;
   return '<section class="battle"><div class="battle-meta spread"><div><div class="eyebrow">Encounter ' + (run.index + 1)
     + ' / 3 · ' + escape(run.plan.seed) + '</div><h3>' + roundNames[run.index] + '</h3><p class="muted">'
     + HAZARDS[run.encounter.hazard].name + ' · ' + MODIFIERS[run.plan.modifier].name + '</p></div>'
-    + action('pause', 'Pause', 'class="pause"') + '</div><div class="arena"><div class="crests" aria-hidden="true">'
-    + run.enemies.map(foe => action('focus:' + foe.id, '<i>' + FOES[foe.key].mark + '</i><small>' + FOES[foe.key].role
-      + '</small>', 'class="crest crest-target" id="crest-' + foe.id + '" tabindex="-1"')).join('')
-    + '</div><div class="crests company-line" aria-hidden="true">'
-    + run.party.map(ally => '<div class="crest" id="crest-' + ally.key + '"><i>' + HEROES[ally.key].mark + '</i><small>'
-      + heroName(ally.key) + '</small></div>').join('') + '</div></div>'
+    + action('pause', 'Pause', 'class="pause"') + '</div><div class="arena" aria-label="Generated ruins map" style="--columns:' + map.width + ';--rows:' + map.height + '">'
+    + '<div class="map-tiles" aria-hidden="true">' + map.floor.map((floor, cell) =>
+      '<span class="tile ' + (floor ? 'floor' : 'wall') + (cell === map.exit ? ' exit' : '') + '">' + (cell === map.exit ? '↑' : '') + '</span>').join('')
+    + '</div>' + run.enemies.map(foe => action('focus:' + foe.id, '<i>' + FOES[foe.key].mark + '</i>' + meter,
+      'class="token foe-token" id="crest-' + foe.id + '" aria-label="Focus ' + FOES[foe.key].name + '" hidden')).join('')
+    + run.party.map((ally, index) => '<div class="token ally-token" id="crest-' + ally.key + '" style="--offset:' + (index - 1) * 7
+      + 'px" aria-hidden="true"><i>' + HEROES[ally.key].mark + '</i>' + meter + '</div>').join('') + '</div>'
     + '<div class="battle-controls"><div class="telegraph" id="telegraph"><div class="spread"><span class="eyebrow" id="cast-type"></span>'
     + '<span class="health" id="cast-time"></span></div><strong id="cast-title"></strong><small id="cast-hint"></small>' + meter + '</div>'
-    + '<div class="enemies" aria-label="Enemy targets">' + run.enemies.map(foe => action('focus:' + foe.id,
+    + '<div class="targeting spread"><small id="target-mode"></small>' + action('focus:auto', 'Auto', 'class="pause"') + '</div>'
+    + '<div class="enemies" aria-label="Enemy targets" hidden>' + run.enemies.map(foe => action('focus:' + foe.id,
       '<strong>' + FOES[foe.key].name + '</strong><span class="role"></span>' + meter + '<span class="health"></span>',
       'id="enemy-' + foe.id + '" class="slot enemy"')).join('') + '</div>'
     + '<div class="party" aria-label="Company abilities">' + run.party.map(ally => '<div class="slot card" id="ally-' + ally.key + '"><strong>'
@@ -176,7 +181,8 @@ function combatPage(run) {
 }
 
 function drawCombat(run) {
-  const focus = focused(run);
+  const focus = run.enemies.find(foe => foe.id === run.focus && foe.hp > 0 && foe.visible);
+  const advancing = !run.enemies.some(foe => foe.hp > 0);
   const cast = run.cast;
   const telegraph = document.querySelector('#telegraph');
   const notice = run.time - run.notice.at < 2.2 ? run.notice : null;
@@ -185,36 +191,52 @@ function drawCombat(run) {
   document.querySelector('#cast-type').textContent = cast ? (cast.id < 0 ? 'Hazard · brace' : 'Enemy casting · interrupt') : 'Combat log';
   document.querySelector('#cast-time').textContent = cast ? castRemaining.toFixed(1) + 's' : run.time.toFixed(0) + 's';
   const title = document.querySelector('#cast-title');
-  title.textContent = cast ? cast.name : notice?.text || 'Steel drawn';
+  title.textContent = cast ? cast.name : advancing ? 'Path clear' : notice?.text || (run.engagedAt === null ? 'Scouting ahead' : 'Blades drawn');
   title.className = cast ? '' : notice?.kind || '';
-  document.querySelector('#cast-hint').textContent = cast ? targets[cast.effect] : run.guard > 0 ? 'Company braced' : 'Tap an enemy to focus attacks';
+  document.querySelector('#cast-hint').textContent = cast ? targets[cast.effect] : advancing ? 'The company is moving to the exit'
+    : run.guard > 0 ? 'Company braced' : 'Tap an enemy on the map to rush it';
   telegraph.style.setProperty('--fill', (cast ? castRemaining / cast.duration * 100 : 0) + '%');
+  document.querySelector('#target-mode').textContent = focus ? 'Rushing ' + FOES[focus.key].name : 'Auto · nearest enemy';
+  document.querySelector('[data-action="focus:auto"]').disabled = !focus;
+  document.querySelector('.enemies').hidden = !run.enemies.some(foe => foe.visible);
+  const position = (token, cell) => {
+    token.style.left = (cellX(cell) + 0.5) / run.map.width * 100 + '%';
+    token.style.top = (cellY(cell) + 0.5) / run.map.height * 100 + '%';
+  };
+  const tiles = document.querySelector('.map-tiles').children;
+  run.map.seen.forEach((seen, cell) => { if (seen) tiles[cell].classList.add('seen'); });
   for (const foe of run.enemies) {
     const button = document.querySelector('#enemy-' + foe.id);
     const icon = document.querySelector('#crest-' + foe.id);
     const isFocused = focus?.id === foe.id;
+    position(icon, foe.cell);
+    icon.hidden = button.hidden = !foe.visible;
     button.setAttribute('aria-pressed', isFocused);
+    icon.setAttribute('aria-pressed', isFocused);
     button.disabled = foe.hp <= 0;
     icon.disabled = button.disabled;
     icon.classList.toggle('selected', isFocused);
     icon.classList.toggle('dead', foe.hp <= 0);
     icon.classList.toggle('casting', cast?.id === foe.id);
+    icon.classList.toggle('hit', run.time - foe.hit < 0.22);
     button.querySelector('.role').textContent = foe.hp <= 0 ? 'Fallen' : cast?.id === foe.id ? 'Casting'
       : foe.exposed > 0 ? 'Exposed' : bodyguard(run, foe) ? 'Protected' : foe.barrier > 0 ? 'Ward ' + number(foe.barrier) : FOES[foe.key].role;
     button.querySelector('.health').textContent = number(foe.hp) + ' / ' + foe.maxHp;
     button.style.setProperty('--fill', foe.hp / foe.maxHp * 100 + '%');
+    icon.style.setProperty('--fill', foe.hp / foe.maxHp * 100 + '%');
   }
   for (const ally of run.party) {
     const card = document.querySelector('#ally-' + ally.key);
     const icon = document.querySelector('#crest-' + ally.key);
     const button = card.querySelector('button');
     const hero = HEROES[ally.key];
-    const canCut = cast && cast.id >= 0;
-    button.disabled = ally.hp <= 0 || ally.echo || ally.cd > 0 || (ally.key === 'duelist' && !canCut);
+    button.disabled = !abilityReady(run, ally);
     button.classList.toggle('react', !button.disabled && !!cast && ['warden', 'duelist'].includes(ally.key));
     icon.classList.toggle('dead', ally.hp <= 0);
     icon.classList.toggle('echo', ally.echo);
-    icon.classList.toggle('striking', ally.hp > 0 && run.nextStrike - run.time >= 1.85);
+    position(icon, ally.cell);
+    icon.style.setProperty('--fill', ally.hp / ally.maxHp * 100 + '%');
+    icon.classList.toggle('striking', ally.hp > 0 && run.time - ally.struck < 0.23);
     button.textContent = ally.hp <= 0 ? 'Fallen' : ally.echo ? 'Echo' : ally.cd > 0 ? hero.ability + ' · ' + number(ally.cd) : hero.ability;
     card.querySelector('.health').textContent = number(ally.hp) + ' / ' + ally.maxHp + (ally.ward > 0 ? ' ◈' : '');
     card.style.setProperty('--fill', ally.hp / ally.maxHp * 100 + '%');
@@ -273,17 +295,22 @@ function drawUpdateSettings() {
   const message = screen.querySelector('#update-message');
   if (!message) return;
   message.textContent = updateMessage;
-  screen.querySelector('[data-action="check-update"]').disabled = !registration || checkingUpdate || applyingUpdate;
-  screen.querySelector('[data-action="apply-update"]').hidden = !registration?.waiting || applyingUpdate;
+  screen.querySelector('[data-action="check-update"]').disabled = (!registration && !android) || checkingUpdate || applyingUpdate;
+  screen.querySelector('[data-action="apply-update"]').hidden = !waitingUpdate() || applyingUpdate;
+}
+
+function waitingUpdate() {
+  return android ? android.hasUpdate() : !!registration?.waiting && !!navigator.serviceWorker.controller;
 }
 
 function applyUpdate() {
-  if (!registration?.waiting || !navigator.serviceWorker.controller || applyingUpdate ||
+  if (!waitingUpdate() || applyingUpdate ||
       !controller || document.hidden || failed || save.run || save.last) return;
   applyingUpdate = true;
   updateMessage = 'Applying the update…';
   drawUpdateSettings();
-  registration.waiting.postMessage('APPLY_UPDATE');
+  if (android) android.applyUpdate();
+  else registration.waiting.postMessage('APPLY_UPDATE');
   setTimeout(() => {
     applyingUpdate = false;
     updateMessage = 'The update is ready. Open Settings to try applying it again.';
@@ -292,7 +319,7 @@ function applyUpdate() {
 }
 
 function updateReady() {
-  if (!registration.waiting || applyingUpdate) return;
+  if (!waitingUpdate() || applyingUpdate) return;
   checkingUpdate = false;
   updateMessage = 'An update is downloaded and ready to apply.';
   if (autoUpdate) applyUpdate();
@@ -319,9 +346,9 @@ function watchWorker(worker) {
 }
 
 async function checkUpdates(manual = false) {
-  if (!registration || !controller || document.hidden || applyingUpdate || checkingUpdate) return;
+  if ((!registration && !android) || !controller || document.hidden || applyingUpdate || checkingUpdate) return;
   if (!manual && (!autoUpdate || Date.now() - lastCheck < CHECK_INTERVAL)) return;
-  if (registration.waiting) {
+  if (waitingUpdate()) {
     updateReady();
     return;
   }
@@ -329,6 +356,10 @@ async function checkUpdates(manual = false) {
   lastCheck = Date.now();
   updateMessage = 'Checking for updates…';
   drawUpdateSettings();
+  if (android) {
+    android.checkUpdate();
+    return;
+  }
   try {
     await registration.update();
     if (registration.waiting) updateReady();
@@ -347,6 +378,10 @@ async function checkUpdates(manual = false) {
 }
 
 function exportSave() {
+  if (android) {
+    android.exportBackup(JSON.stringify(save));
+    return;
+  }
   const url = URL.createObjectURL(new Blob([JSON.stringify(save)], { type: 'application/json' }));
   const link = document.createElement('a');
   link.href = url;
@@ -355,15 +390,13 @@ function exportSave() {
   setTimeout(() => URL.revokeObjectURL(url), 30_000);
 }
 
-screen.addEventListener('change', async event => {
-  if (event.target.id !== 'save-file' || !event.target.files.length) return;
+function restoreBackup(contents) {
   try {
-    const file = event.target.files[0];
-    if (file.size > 100_000) throw new Error('Backup too large');
-    const backup = readBackup(JSON.parse(await file.text()));
+    const backup = readBackup(JSON.parse(contents));
     if (!controller || applyingUpdate || failed || save.run || save.last) return;
     if (!window.confirm('Replace this device’s Relic Company progress with this backup?')) {
-      event.target.value = '';
+      const input = screen.querySelector('#save-file');
+      if (input) input.value = '';
       return;
     }
     if (!commit(backup)) return;
@@ -373,6 +406,12 @@ screen.addEventListener('change', async event => {
     backupMessage = 'Choose a Relic Company save exported between contracts.';
   }
   render(true);
+}
+
+screen.addEventListener('change', async event => {
+  if (event.target.id !== 'save-file' || !event.target.files.length) return;
+  const file = event.target.files[0];
+  restoreBackup(file.size > 100_000 ? '' : await file.text().catch(() => ''));
 });
 
 function render(force = false) {
@@ -445,7 +484,7 @@ function handle(key) {
       clock = 0;
       lag = 0;
     } else if (!paused && type === 'focus') {
-      if (!selectTarget(run, Number(id))) return;
+      if (!selectTarget(run, id === 'auto' ? null : Number(id))) return;
     } else if (!paused && type === 'ability') {
       if (!activate(run, id)) return;
     } else if (run.stage === 'interlude' && type === 'perk') run.pending.perk = id;
@@ -473,7 +512,10 @@ function handle(key) {
       if (autoUpdate) checkUpdates(true);
       return;
     case 'export-save': exportSave(); return;
-    case 'import-save': screen.querySelector('#save-file').click(); return;
+    case 'import-save':
+      if (android) android.importBackup();
+      else screen.querySelector('#save-file').click();
+      return;
     case 'mode': mode = id; break;
     case 'tier': tier = Number(id); break;
     case 'squad':
@@ -581,6 +623,7 @@ function initialize() {
     const raw = localStorage.getItem(KEY);
     save = raw ? JSON.parse(raw) : newSave();
     if (save.version !== 1 || !save.roster || !Array.isArray(save.squad)) throw new Error('Invalid save');
+    if (save.run?.stage === 'combat') prepareMap(save.run);
     controller = true;
     autoUpdate = localStorage.getItem(UPDATE_KEY) !== 'off';
     if (!seed) {
@@ -635,7 +678,33 @@ setInterval(() => {
   screen.querySelector('[data-action="offline:claim"]').disabled = !coins;
 }, 1000);
 
-if ('serviceWorker' in navigator) {
+if (android) {
+  window.addEventListener('relic-android-update', event => {
+    checkingUpdate = event.detail === 'downloading';
+    if (event.detail === 'ready') updateReady();
+    else {
+      updateMessage = event.detail === 'current' ? 'You’re on the latest build.' : checkingUpdate
+        ? 'Downloading the update…' : 'The update server is unavailable. Your offline game is ready.';
+    }
+    drawUpdateSettings();
+  });
+  window.addEventListener('relic-android-import', event => restoreBackup(event.detail));
+  window.addEventListener('relic-android-backup-error', () => {
+    backupMessage = 'The selected backup could not be opened.';
+    render(true);
+  });
+  window.addEventListener('relic-android-pause', hide);
+  window.addEventListener('relic-android-resume', () => {
+    if (controller && save.run?.stage === 'combat') {
+      paused = true;
+      clock = 0;
+      lag = 0;
+    }
+    if (controller) render(true);
+    else claim();
+    checkUpdates();
+  });
+} else if ('serviceWorker' in navigator) {
   let controlled = !!navigator.serviceWorker.controller;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (controlled) location.reload();
@@ -657,6 +726,6 @@ if ('serviceWorker' in navigator) {
     updateMessage = 'This address cannot prepare the offline game or check for updates.';
     drawUpdateSettings();
   });
-  window.addEventListener('online', () => { lastCheck = 0; checkUpdates(); });
-  setInterval(() => checkUpdates(), CHECK_INTERVAL);
 }
+window.addEventListener('online', () => { lastCheck = 0; checkUpdates(); });
+setInterval(() => checkUpdates(), CHECK_INTERVAL);

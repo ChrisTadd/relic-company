@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { LOOT, FOES } from '../data.mjs';
+import { distance, nextTile } from '../map.mjs';
 import {
   contract, validEncounter, castWindow, availablePerks, startRun, newSave, nextEncounter,
   bodyguard, focused, selectTarget, activate, tick, settle, level, upgrade, offlineCoins,
@@ -45,6 +46,10 @@ test('protected healers redirect strikes, while Deadeye reaches the back line', 
   const witch = run.enemies.find(foe => foe.key === 'healer');
   const guard = bodyguard(run, witch);
   assert.ok(guard);
+  run.engagedAt = 0;
+  run.nextFoeMove = 60;
+  witch.visible = guard.visible = true;
+  run.party.forEach(ally => { ally.cell = witch.cell; });
   assert.ok(selectTarget(run, witch.id));
   assert.equal(focused(run), witch);
   for (let i = 0; i < 8; i++) tick(run);
@@ -166,6 +171,11 @@ test('Saint intercepts a lethal hit once, then the Queen summons an echo', () =>
     save.kit.saint = true;
   });
   const lead = run.party[0];
+  const [attacker, ...rest] = run.enemies;
+  attacker.cell = lead.cell;
+  attacker.visible = true;
+  rest.forEach(foe => { foe.hp = 0; });
+  run.nextStrike = run.nextFoeMove = 60;
   function lethal() {
     lead.hp = 1;
     run.nextAttack = run.time;
@@ -191,6 +201,54 @@ test('serializing during combat preserves the exact next simulation step', () =>
     assert.equal(tick(restored), tick(run));
     assert.deepEqual(restored, run);
   }
+});
+
+test('seeded rooms are connected, vary between seeds and reveal foes through exploration', () => {
+  const layouts = new Set();
+  for (let index = 0; index < 120; index++) {
+    const { run } = fixture('ruins-' + index, index % 3);
+    const { map } = run;
+    assert.deepEqual(fixture('ruins-' + index, index % 3).run.map, map);
+    layouts.add(map.floor.join(''));
+    for (const origin of [...map.starts, ...map.spawns]) {
+      let cell = origin;
+      for (let steps = 0; steps < map.floor.length && cell !== map.exit; steps++) {
+        const next = nextTile(map, cell, map.exit);
+        assert.equal(distance(cell, next), 1);
+        assert.ok(map.floor[next]);
+        cell = next;
+      }
+      assert.equal(cell, map.exit);
+    }
+    assert.ok(run.enemies.every(foe => !foe.visible));
+    assert.equal(selectTarget(run, 0), false);
+    for (let i = 0; i < 70 && !run.enemies.some(foe => foe.visible); i++) tick(run);
+    assert.ok(run.enemies.some(foe => foe.visible));
+    assert.notEqual(run.party[0].cell, map.starts[0]);
+  }
+  assert.ok(layouts.size > 30);
+});
+
+test('mercenaries pursue their nearest target until a tap orders a company rush', () => {
+  const { run } = fixture('two-targets');
+  const [near, far] = run.enemies;
+  run.map.floor.fill(true);
+  near.cell = 38;
+  far.cell = 43;
+  near.visible = far.visible = true;
+  run.nextFoeMove = 60;
+  run.party[0].cell = 47;
+  run.party[1].cell = 52;
+  for (let i = 0; i < 3; i++) tick(run);
+  assert.equal(run.party[0].target, near.id);
+  assert.equal(run.party[1].target, far.id);
+  const previous = run.party[0].cell;
+  assert.ok(selectTarget(run, far.id));
+  for (let i = 0; i < 4; i++) tick(run);
+  assert.ok(run.party.every(ally => ally.target === far.id));
+  assert.ok(distance(run.party[0].cell, far.cell) < distance(previous, far.cell));
+  assert.ok(selectTarget(run, null));
+  assert.equal(run.focus, null);
 });
 
 test('a developed starter squad can clear all three campaign tiers on the safer route', () => {

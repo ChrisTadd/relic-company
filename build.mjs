@@ -12,7 +12,7 @@ export async function build(output, source = new URL('./', import.meta.url)) {
   assets.set('index.html', Buffer.from(assets.get('index.html').toString().replace('name="relic-build" content="local"', 'name="relic-build" content="' + version + '"')));
   const integrity = Object.fromEntries([...assets].map(([name, contents]) =>
     [name, 'sha256-' + createHash('sha256').update(contents).digest('base64')]));
-  const script = worker.replace("const BUILD = 'local-v3';", "const BUILD = '" + version + "';")
+  const script = worker.replace(/^const BUILD = 'local-v\d+';/m, "const BUILD = '" + version + "';")
     .replace('const INTEGRITY = null;', 'const INTEGRITY = ' + JSON.stringify(integrity) + ';');
   await mkdir(output, { recursive: true });
   await Promise.all([...assets, ['sw.js', script]].map(([name, contents]) => writeFile(join(output, name), contents)));

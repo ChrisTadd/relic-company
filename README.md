@@ -1,10 +1,12 @@
 # Relic Company
 
-**The Cinder March** is the first playable region. Lead three mercenaries through three encounters and defeat Prior Veyr. Tap a target to focus automatic attacks. When a cast bar appears, interrupt the caster, brace against the hit, or save a heal for the aftermath. Choose one of three boons at each camp. The tollhouse detour pays more if you clear it.
+**The Cinder March** is the first playable region. Three mercenaries scout a seeded map of the ruins, find their way around walls, and engage the closest enemies they discover. Tap an enemy token to order a rush, or tap **Auto** to return to nearest-target orders. Interrupt dangerous casts, brace against hits, or save a heal for the aftermath. Pick a boon at camp and choose whether to take the tougher tollhouse route to Prior Veyr.
 
 ## Install on Android
 
-Open [Relic Company](https://christadd.github.io/relic-company/) in Android Chrome and wait for **Offline ready**. Then open Chrome’s menu and choose **Install and create shortcut → Install**. Launch **Relic Co.** from your home screen. The game and your save are stored on your phone for offline play.
+Download [relic-company.apk](https://github.com/ChrisTadd/relic-company/releases/latest/download/relic-company.apk) from GitHub Releases and open the downloaded file. If Android asks, allow your browser or file manager to install from this source, then tap **Install**. Open **Relic Company** from your app drawer. The APK contains the game and can launch offline on Android 8 or newer with an up-to-date Android System WebView.
+
+The [browser build](https://christadd.github.io/relic-company/) is also available for desktop play and for Android Chrome installation where GitHub Pages is reachable.
 
 ### Local playtesting from Windows over USB
 
@@ -30,8 +32,9 @@ Extract `relic-company-android.zip` into an HTTPS static host. Open that address
 
 - **Settings → Game updates** shows the installed build. Automatic updates are on by default. The app checks when it opens, when it regains a connection, and periodically while open. An update downloads in the background and applies after you leave the results screen.
 - With automatic updates off, use **Check for updates** and **Apply downloaded update**. Chrome may also pick up an update when all game windows are closed.
-- Keep the same installed game address for later releases. If you move from the USB preview to a hosted address, first serve the latest preview over USB. Close every preview window once while online so the preview gets Settings. Then use **Settings → Export save** and import that file from the new address.
-- Successful pushes to `main` publish automatically to [GitHub Pages](https://christadd.github.io/relic-company/). The build command, `node build.mjs dist`, assigns a version from the game files and packages them for offline use.
+- Android APK installs download signed game updates from [GitHub Releases](https://github.com/ChrisTadd/relic-company/releases). Updates to the Android wrapper itself use the newer signed APK and keep the same app data when installed over the existing app.
+- Use **Settings → Export save** in the browser build and **Import save** in the APK to move an existing save. Export after collecting any pending run payout.
+- Successful game pushes to `main` build a signed APK and publish to [GitHub Pages](https://christadd.github.io/relic-company/). The build command, `node build.mjs dist`, assigns a version from the game files and packages them for offline use.
 
 ## Local verification
 

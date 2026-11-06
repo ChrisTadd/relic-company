@@ -1,0 +1,66 @@
+name: Release Android APK
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: [README.md]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: relic-android
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: node --test tests/*.test.mjs
+      - name: Prepare Android SDK
+        run: |
+          sdk="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          if [[ ! -f "$sdk/platforms/android-35/android.jar" || ! -x "$sdk/build-tools/35.0.0/aapt2" ]]; then
+            sdkmanager "platforms;android-35" "build-tools;35.0.0"
+          fi
+      - name: Build and sign
+        env:
+          RELIC_ANDROID_KEYSTORE: ${{ secrets.RELIC_ANDROID_KEYSTORE }}
+          RELIC_ANDROID_KEY_PASSWORD: ${{ secrets.RELIC_ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          work="$RUNNER_TEMP/relic-android"
+          mkdir -p "$work"
+          umask 077
+          trap 'rm -f "$work/signing.pfx"' EXIT
+          printf '%s' "$RELIC_ANDROID_KEYSTORE" | base64 --decode > "$work/signing.pfx"
+          bash android/build.sh "$work" "$GITHUB_RUN_NUMBER"
+      - name: Publish signed release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="android-v$GITHUB_RUN_NUMBER"
+          if gh release view "$tag" >/dev/null 2>&1; then exit 0; fi
+          gh release create "$tag" "$RUNNER_TEMP/relic-android/release/"* --target "$GITHUB_SHA" --latest \
+            --title "Relic Company Android $GITHUB_RUN_NUMBER" \
+            --notes 'Download relic-company.apk on Android. Future game updates download through Settings and apply between contracts.'
+  smoke:
+    runs-on: ubuntu-latest
+    needs: release
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install and launch APK offline on Android
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "android-v$GITHUB_RUN_NUMBER" --pattern relic-company.apk --dir "$RUNNER_TEMP"
+          bash android/smoke.sh "$RUNNER_TEMP/relic-company.apk"

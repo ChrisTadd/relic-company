@@ -8,7 +8,7 @@ const extensions = {
   '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
   '.svg': 'image/svg+xml', '.png': 'image/png', '.webmanifest': 'application/manifest+json',
 };
-const publicFiles = new Set(['index.html', 'style.css', 'app.mjs', 'game.mjs', 'data.mjs', 'backup.mjs', 'sw.js',
+const publicFiles = new Set(['index.html', 'style.css', 'app.mjs', 'game.mjs', 'map.mjs', 'data.mjs', 'backup.mjs', 'sw.js',
   'manifest.webmanifest', 'crest.svg', 'march.svg', 'icon-192.png', 'icon-512.png']);
 if (process.argv.includes('--dev')) publicFiles.add('dev.mjs');
 
