@@ -18,7 +18,8 @@ mapfile -t classes < <(find "$work/classes" -name '*.class')
 zip -q -j "$work/unsigned.apk" "$work/dex/classes.dex"
 "$tools/zipalign" -f 4 "$work/unsigned.apk" "$work/aligned.apk"
 "$tools/apksigner" sign --ks "$work/signing.pfx" --ks-type PKCS12 \
-  --ks-pass env:RELIC_ANDROID_KEY_PASSWORD --out "$work/release/relic-company.apk" "$work/aligned.apk"
+  --ks-pass env:RELIC_ANDROID_KEY_PASSWORD --v4-signing-enabled false \
+  --out "$work/release/relic-company.apk" "$work/aligned.apk"
 "$tools/apksigner" verify --verbose --print-certs "$work/release/relic-company.apk"
 "$tools/aapt" dump badging "$work/release/relic-company.apk"
 

@@ -166,8 +166,8 @@ function combatPage(run) {
       '<span class="tile ' + (floor ? 'floor' : 'wall') + (cell === map.exit ? ' exit' : '') + '">' + (cell === map.exit ? '↑' : '') + '</span>').join('')
     + '</div>' + run.enemies.map(foe => action('focus:' + foe.id, '<i>' + FOES[foe.key].mark + '</i>' + meter,
       'class="token foe-token" id="crest-' + foe.id + '" aria-label="Focus ' + FOES[foe.key].name + '" hidden')).join('')
-    + run.party.map((ally, index) => '<div class="token ally-token" id="crest-' + ally.key + '" style="--offset:' + (index - 1) * 7
-      + 'px" aria-hidden="true"><i>' + HEROES[ally.key].mark + '</i>' + meter + '</div>').join('') + '</div>'
+    + run.party.map(ally => '<div class="token ally-token" id="crest-' + ally.key
+      + '" aria-hidden="true"><i>' + HEROES[ally.key].mark + '</i>' + meter + '</div>').join('') + '</div>'
     + '<div class="battle-controls"><div class="telegraph" id="telegraph"><div class="spread"><span class="eyebrow" id="cast-type"></span>'
     + '<span class="health" id="cast-time"></span></div><strong id="cast-title"></strong><small id="cast-hint"></small>' + meter + '</div>'
     + '<div class="targeting spread"><small id="target-mode"></small>' + action('focus:auto', 'Auto', 'class="pause"') + '</div>'
@@ -234,6 +234,13 @@ function drawCombat(run) {
     button.classList.toggle('react', !button.disabled && !!cast && ['warden', 'duelist'].includes(ally.key));
     icon.classList.toggle('dead', ally.hp <= 0);
     icon.classList.toggle('echo', ally.echo);
+    const company = run.party.filter(unit => unit.hp > 0 && unit.cell === ally.cell);
+    const cluster = company.length > 1 && ally.hp > 0;
+    const index = company.indexOf(ally);
+    const offset = !cluster ? [0, 0] : company.length === 2 ? [[-9, 0], [9, 0]][index] : [[-9, -5], [9, -5], [0, 10]][index];
+    icon.classList.toggle('clustered', cluster);
+    icon.style.setProperty('--offset-x', offset[0] + 'px');
+    icon.style.setProperty('--offset-y', offset[1] + 'px');
     position(icon, ally.cell);
     icon.style.setProperty('--fill', ally.hp / ally.maxHp * 100 + '%');
     icon.classList.toggle('striking', ally.hp > 0 && run.time - ally.struck < 0.23);

@@ -123,7 +123,7 @@ small { font-size: 12px; }
 .token {
   --size: clamp(27px, 8vw, 36px); position: absolute; z-index: 2;
   width: var(--size); min-height: 0; padding: 0; border: 0; background: none !important;
-  transform: translate(calc(-50% + var(--offset, 0px)), -50%);
+  transform: translate(calc(-50% + var(--offset-x, 0px)), calc(-50% + var(--offset-y, 0px)));
   transition: top .16s ease-out, left .16s ease-out;
 }
 .token i {
@@ -140,6 +140,8 @@ small { font-size: 12px; }
 .token.dead { opacity: .25; z-index: 1; pointer-events: none; }
 .foe-token.hit i { filter: brightness(1.65); }
 .ally-token { pointer-events: none; }
+.ally-token.clustered { --size: clamp(18px, 5vw, 22px); }
+.ally-token.clustered i { font-size: 12px; }
 .ally-token i { background: radial-gradient(#475a37, #22281c 76%); color: #dfebc0; border-color: #9aa981; }
 .ally-token .meter > span { background: #9bb781; }
 .ally-token.echo i { background: #2b3a3a; color: #bde1e2; border-color: #84a6a7; }
@@ -179,12 +181,14 @@ small { font-size: 12px; }
 #error { position: fixed; z-index: 5; bottom: 0; left: 50%; width: min(100%, 530px); transform: translateX(-50%); background: #56261e; padding: 16px; }
 #error button { margin-top: 8px; }
 @media (max-height: 650px) {
-  .arena { min-height: 175px; }
+  .arena { min-height: clamp(120px, 26dvh, 165px); }
+  .battle-meta { padding-block: 6px; }
   .token { --size: 25px; }
   .token i { font-size: 15px; }
   .telegraph { min-height: 65px; }
-  .enemy { min-height: 51px; padding-block: 4px; gap: 2px; }
-  .battle-controls { gap: 5px; }
+  .battle-controls .enemies { min-height: 50px; }
+  .enemy { min-height: 50px; padding-block: 4px; gap: 2px; }
+  .battle-controls { gap: 5px; padding-block: 6px; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
