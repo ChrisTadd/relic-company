@@ -21,6 +21,8 @@ timeout 180 bash -c 'until [[ "$(adb shell getprop sys.boot_completed | tr -d "\
 adb shell wm size 390x760
 adb shell wm density 160
 adb shell input keyevent 82
+# The emulator's launcher can show a system ANR dialog over the game on first boot.
+adb shell pm disable-user --user 0 com.google.android.apps.nexuslauncher || true
 adb install "$apk"
 adb shell cmd connectivity airplane-mode enable
 adb shell svc wifi disable
@@ -37,7 +39,13 @@ for _ in range(10):
     dump = subprocess.run(["adb", "exec-out", "uiautomator", "dump", "/dev/tty"], capture_output=True, text=True, timeout=15).stdout
     xml = re.search(r"<hierarchy\b.*</hierarchy>", dump, re.S)
     if xml:
-        for node in ET.fromstring(xml[0]).iter("node"):
+        nodes = list(ET.fromstring(xml[0]).iter("node"))
+        launcher_error = any("Pixel Launcher isn't responding" in node.attrib.get("text", "") for node in nodes)
+        for node in nodes:
+            if launcher_error and node.attrib.get("text") == "Close app":
+                x1, y1, x2, y2 = map(int, re.findall(r"\d+", node.attrib["bounds"]))
+                subprocess.run(["adb", "shell", "input", "tap", str((x1+x2)//2), str((y1+y2)//2)], check=True)
+                break
             if text in (node.attrib.get("text"), node.attrib.get("content-desc")):
                 x1, y1, x2, y2 = map(int, re.findall(r"\d+", node.attrib["bounds"]))
                 if len(sys.argv) == 3 and x1 < x2 and y1 < y2:
