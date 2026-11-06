@@ -9,11 +9,14 @@ sdk=${ANDROID_SDK_ROOT:-${ANDROID_HOME:?Android SDK is required}}
 sdkmanager=$(find "$sdk/cmdline-tools" -name sdkmanager -type f | sort -V | tail -1)
 "$sdkmanager" "$system" emulator
 export PATH="$sdk/platform-tools:$sdk/emulator:$PATH"
-echo no | "$(dirname "$sdkmanager")/avdmanager" create avd --force --name relic-test --package "$system" --device pixel_2
+export ANDROID_AVD_HOME="$RUNNER_TEMP/relic-avd"
+mkdir -p "$ANDROID_AVD_HOME"
+echo no | "$(dirname "$sdkmanager")/avdmanager" create avd --force --name relic-test --package "$system" --path "$ANDROID_AVD_HOME/relic-test.avd"
+emulator -list-avds | grep -x relic-test
 sudo chmod a+rw /dev/kvm
 emulator -avd relic-test -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader -camera-back none >"$RUNNER_TEMP/relic-emulator.log" 2>&1 &
-trap 'code=$?; if (( code )); then cat "$RUNNER_TEMP/relic-emulator.log"; adb logcat -d -t 100 || true; fi; adb emu kill || true' EXIT
-timeout 150 adb wait-for-device
+trap 'code=$?; if (( code )); then cat "$RUNNER_TEMP/relic-emulator.log"; timeout 8 adb logcat -d -t 100 || true; fi; timeout 8 adb emu kill || true' EXIT
+timeout 100 adb wait-for-device
 timeout 180 bash -c 'until [[ "$(adb shell getprop sys.boot_completed | tr -d "\r")" == 1 ]]; do sleep 2; done'
 adb shell wm size 390x760
 adb shell wm density 160

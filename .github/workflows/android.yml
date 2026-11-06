@@ -64,10 +64,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release download "android-v$GITHUB_RUN_NUMBER" --pattern relic-company.apk --dir "$RUNNER_TEMP"
-          previous="android-v$((GITHUB_RUN_NUMBER - 1))"
-          if gh release view "$previous" >/dev/null 2>&1; then
-            gh release download "$previous" --pattern relic-company.apk --dir "$RUNNER_TEMP/previous"
-            bash android/smoke.sh "$RUNNER_TEMP/relic-company.apk" "$RUNNER_TEMP/previous/relic-company.apk"
-          else
-            bash android/smoke.sh "$RUNNER_TEMP/relic-company.apk"
-          fi
+          apk="$RUNNER_TEMP/relic-company.apk"
+          for delta in 1 2; do
+            previous="android-v$((GITHUB_RUN_NUMBER - delta))"
+            if ! gh release view "$previous" >/dev/null 2>&1; then continue; fi
+            gh release download "$previous" --pattern relic-company.apk --dir "$RUNNER_TEMP/$previous"
+            older="$RUNNER_TEMP/$previous/relic-company.apk"
+            if ! cmp -s <(unzip -p "$apk" assets/game/index.html) <(unzip -p "$older" assets/game/index.html); then
+              bash android/smoke.sh "$apk" "$older"
+              exit
+            fi
+          done
+          bash android/smoke.sh "$apk"
