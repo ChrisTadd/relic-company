@@ -18,6 +18,8 @@ emulator -avd relic-test -no-window -no-audio -no-boot-anim -no-snapshot -gpu sw
 trap 'code=$?; if (( code )); then cat "$RUNNER_TEMP/relic-emulator.log"; timeout 8 adb logcat -d -t 100 || true; fi; timeout 8 adb emu kill || true' EXIT
 timeout 100 adb wait-for-device
 timeout 180 bash -c 'until [[ "$(adb shell getprop sys.boot_completed | tr -d "\r")" == 1 ]]; do sleep 2; done'
+adb root
+timeout 20 adb wait-for-device
 adb shell wm size 390x760
 adb shell wm density 160
 adb shell input keyevent 82
@@ -62,11 +64,16 @@ tap_text() { find_text "$1" tap; }
 start_contract() {
   adb shell input swipe 195 650 195 460 300
   tap_text 'Draw steel'
-  find_text 'Pause'
 }
 
 start_contract
-sleep 2
+save_path="/data/user/0/$package/shared_prefs/company-save.xml"
+for attempt in {1..12}; do
+  checkpoint=$(adb shell cat "$save_path" 2>/dev/null || true)
+  if [[ "$checkpoint" == *'&quot;stage&quot;:&quot;combat&quot;'* || "$checkpoint" == *'"stage":"combat"'* ]]; then break; fi
+  if (( attempt == 12 )); then echo 'No active contract was written to Android storage'; exit 1; fi
+  sleep 1
+done
 adb shell am force-stop "$package"
 adb shell am start -W -n "$package/.MainActivity"
 tap_text 'Resume fight'
@@ -78,10 +85,6 @@ if [[ -n "$previous" ]]; then
   adb uninstall "$package"
   adb install "$previous"
   adb shell am start -W -n "$package/.MainActivity"
-  start_contract
-  tap_text 'Pause'
-  tap_text 'Withdraw and take partial pay'
-  tap_text 'Find another contract'
   adb shell cmd connectivity airplane-mode disable
   adb shell svc wifi enable
   adb shell svc data enable
