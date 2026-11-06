@@ -40,17 +40,24 @@ for _ in range(10):
         for node in ET.fromstring(xml[0]).iter("node"):
             if text in (node.attrib.get("text"), node.attrib.get("content-desc")):
                 x1, y1, x2, y2 = map(int, re.findall(r"\d+", node.attrib["bounds"]))
-                if len(sys.argv) == 3:
+                if len(sys.argv) == 3 and x1 < x2 and y1 < y2:
                     subprocess.run(["adb", "shell", "input", "tap", str((x1+x2)//2), str((y1+y2)//2)], check=True)
+                elif len(sys.argv) == 3:
+                    continue
                 sys.exit(0)
     time.sleep(1)
-raise SystemExit("Could not find " + text)
+raise SystemExit("Could not find " + text + "\n" + dump[-7000:])
 PY
 }
 
 tap_text() { find_text "$1" tap; }
+start_contract() {
+  adb shell input swipe 195 650 195 460 300
+  tap_text 'Draw steel'
+  find_text 'Pause'
+}
 
-tap_text 'Draw steel'
+start_contract
 sleep 2
 adb shell am force-stop "$package"
 adb shell am start -W -n "$package/.MainActivity"
@@ -63,7 +70,7 @@ if [[ -n "$previous" ]]; then
   adb uninstall "$package"
   adb install "$previous"
   adb shell am start -W -n "$package/.MainActivity"
-  tap_text 'Draw steel'
+  start_contract
   tap_text 'Pause'
   tap_text 'Withdraw and take partial pay'
   tap_text 'Find another contract'

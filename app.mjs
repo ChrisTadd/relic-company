@@ -8,6 +8,7 @@ import {
 
 const KEY = 'relic-company.save.v1';
 const android = window.RelicAndroid;
+const nativeSave = typeof android?.saveState === 'function';
 const UPDATE_KEY = 'relic-company.auto-update';
 const CHECK_INTERVAL = 10 * 60_000;
 const screen = document.querySelector('#screen');
@@ -48,6 +49,7 @@ let forcedDrop = null;
 let uiMessage = '';
 let clock = 0;
 let lag = 0;
+let lastNativeWrite = 0;
 let registration;
 let autoUpdate = true;
 let applyingUpdate = false;
@@ -58,10 +60,14 @@ let backupMessage = '';
 const watchedWorkers = new WeakSet();
 const buildVersion = document.querySelector('meta[name="relic-build"]').content;
 
-function commit(next = save) {
+function commit(next = save, checkpoint = true) {
   if (!controller) return false;
   try {
-    localStorage.setItem(KEY, JSON.stringify(next));
+    if (!nativeSave) localStorage.setItem(KEY, JSON.stringify(next));
+    else if (checkpoint || Date.now() - lastNativeWrite >= 1000) {
+      if (!android.saveState(JSON.stringify(next))) throw new Error('Could not save Android progress');
+      lastNativeWrite = Date.now();
+    }
     save = next;
     failed = null;
     errorBox.hidden = true;
@@ -590,7 +596,7 @@ function frame(now) {
   lag -= STEP * 1000;
   const outcome = tick(save.run);
   if (outcome) finish(outcome);
-  else if (commit()) render();
+  else if (commit(save, false)) render();
 }
 
 function hide() {
@@ -627,7 +633,7 @@ window.addEventListener('appinstalled', () => {
 
 function initialize() {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = (nativeSave ? android.loadState() : null) ?? localStorage.getItem(KEY);
     save = raw ? JSON.parse(raw) : newSave();
     if (save.version !== 1 || !save.roster || !Array.isArray(save.squad)) throw new Error('Invalid save');
     if (save.run?.stage === 'combat') prepareMap(save.run);

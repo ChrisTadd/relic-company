@@ -123,6 +123,13 @@ public final class MainActivity extends Activity {
     }
 
     public final class Bridge {
+        @JavascriptInterface public String loadState() {
+            return getSharedPreferences("company-save", MODE_PRIVATE).getString("state", null);
+        }
+        @JavascriptInterface public boolean saveState(String json) {
+            return json.length() <= 200_000 && getSharedPreferences("company-save", MODE_PRIVATE)
+                .edit().putString("state", json).commit();
+        }
         @JavascriptInterface public boolean hasUpdate() { return updates.hasUpdate(); }
         @JavascriptInterface public void checkUpdate() { updates.check(); }
         @JavascriptInterface public void applyUpdate() {
