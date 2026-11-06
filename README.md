@@ -4,9 +4,9 @@
 
 ## Install on Android
 
-This build installs through Chrome as a home-screen web app. The first visit loads the game files. After the header says **Offline ready**, the game can launch and play from the phone’s local cache. Progress is stored on that phone in Chrome’s site storage.
+Open [Relic Company](https://christadd.github.io/relic-company/) in Android Chrome and wait for **Offline ready**. Then open Chrome’s menu and choose **Install and create shortcut → Install**. Launch **Relic Co.** from your home screen. The game and your save are stored on your phone for offline play.
 
-### From this Windows workspace over USB
+### Local playtesting from Windows over USB
 
 1. With Node.js available, open a terminal in the Relic Company folder and run `node serve.mjs`. Leave it open.
 2. Enable **USB debugging** on the phone, connect it to the PC with a USB data cable, and accept the debugging prompt. Extract Google’s Android Platform Tools for Windows and open PowerShell inside the extracted `platform-tools` folder. [Android Platform Tools](https://developer.android.com/tools/releases/platform-tools) · [USB debugging setup](https://developer.android.com/tools/adb#Enabling)
@@ -31,7 +31,7 @@ Extract `relic-company-android.zip` into an HTTPS static host. Open that address
 - **Settings → Game updates** shows the installed build. Automatic updates are on by default. The app checks when it opens, when it regains a connection, and periodically while open. An update downloads in the background and applies after you leave the results screen.
 - With automatic updates off, use **Check for updates** and **Apply downloaded update**. Chrome may also pick up an update when all game windows are closed.
 - Keep the same installed game address for later releases. If you move from the USB preview to a hosted address, first serve the latest preview over USB. Close every preview window once while online so the preview gets Settings. Then use **Settings → Export save** and import that file from the new address.
-- Enable GitHub Pages with **GitHub Actions** as its source, then set the repository Actions variable `RELIC_PAGES` to `enabled` to publish successful builds from `main`. The build command, `node build.mjs dist`, assigns a version from the game files and packages them for offline use.
+- Successful pushes to `main` publish automatically to [GitHub Pages](https://christadd.github.io/relic-company/). The build command, `node build.mjs dist`, assigns a version from the game files and packages them for offline use.
 
 ## Local verification
 
