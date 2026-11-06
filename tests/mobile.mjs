@@ -199,6 +199,16 @@ try {
 
     await read('relicDev.forceDrop("queen")');
     assert.ok(await tap('start'));
+    const startingCell = (await snapshot()).run.party[0].cell;
+    assert.ok(await read('document.querySelectorAll(".map-tiles .tile").length === 99'));
+    assert.equal(await read('document.querySelectorAll(".foe-token:not([hidden])").length'), 0);
+    await wait('relicDev.snapshot().run.party[0].cell !== ' + startingCell, 'autonomous exploration');
+    await wait('document.querySelectorAll(".foe-token:not([hidden])").length === 2', 'enemies discovered on the map');
+    const mapTarget = (await snapshot()).run.enemies.at(-1);
+    assert.ok(await touch('#crest-' + mapTarget.id));
+    await wait('relicDev.snapshot().run.party.every(ally => ally.target === ' + mapTarget.id + ')', 'party follows map tap');
+    assert.ok(await tap('focus:auto'));
+    await wait('relicDev.snapshot().run.focus === null', 'nearest-target orders restored');
     await wait('!!relicDev.snapshot().run?.cast');
     assert.ok(await tap('ability:duelist'));
     await wait('!relicDev.snapshot().run.cast');
@@ -274,9 +284,10 @@ try {
     await tap('start');
     const guardedRun = (await snapshot()).run;
     const witch = guardedRun.enemies.find(foe => foe.key === 'healer');
+    await wait('!document.querySelector("#enemy-' + witch.id + '").hidden', 'witch discovered');
     assert.equal(await read('document.querySelector("#enemy-' + witch.id + ' .role").textContent'), 'Protected');
     assert.ok(await touch('#enemy-' + witch.id));
-    await wait('relicDev.snapshot().run.time >= 0.8', 'first volley redirected');
+    await wait('relicDev.snapshot().run.party.every(ally => ally.target === ' + witch.id + ')', 'party targets protected healer');
     assert.equal((await snapshot()).run.enemies[witch.id].hp, witch.maxHp);
     await tap('pause');
     await tap('retreat');
@@ -309,6 +320,7 @@ try {
       nextEncounter(commissioned.run, availablePerks(commissioned.run)[0], 'elite');
     }
     commissioned.run.enemies.forEach(foe => { foe.hp = 1; foe.barrier = 0; });
+    commissioned.run.party.forEach(ally => { ally.cell = commissioned.run.map.spawns[0]; });
     await read('relicDev.forceDrop("queen")');
     await prepare(commissioned);
     await wait('!!relicDev.snapshot().last', 'guarantee and duplicate');

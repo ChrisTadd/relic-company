@@ -29,7 +29,8 @@ jobs:
         run: |
           sdk="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
           if [[ ! -f "$sdk/platforms/android-35/android.jar" || ! -x "$sdk/build-tools/35.0.0/aapt2" ]]; then
-            sdkmanager "platforms;android-35" "build-tools;35.0.0"
+            sdkmanager=$(find "$sdk/cmdline-tools" -name sdkmanager -type f | sort -V | tail -1)
+            "$sdkmanager" "platforms;android-35" "build-tools;35.0.0"
           fi
       - name: Build and sign
         env:
@@ -63,4 +64,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release download "android-v$GITHUB_RUN_NUMBER" --pattern relic-company.apk --dir "$RUNNER_TEMP"
-          bash android/smoke.sh "$RUNNER_TEMP/relic-company.apk"
+          previous="android-v$((GITHUB_RUN_NUMBER - 1))"
+          if gh release view "$previous" >/dev/null 2>&1; then
+            gh release download "$previous" --pattern relic-company.apk --dir "$RUNNER_TEMP/previous"
+            bash android/smoke.sh "$RUNNER_TEMP/relic-company.apk" "$RUNNER_TEMP/previous/relic-company.apk"
+          else
+            bash android/smoke.sh "$RUNNER_TEMP/relic-company.apk"
+          fi

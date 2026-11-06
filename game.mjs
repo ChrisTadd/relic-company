@@ -407,7 +407,8 @@ function moveUnits(run) {
       if (!foe.visible || foe.id === run.cast?.id || foe.key === 'healer') continue;
       const target = nearest(foe.cell, allies);
       if (target && !inRange(run.map, foe.cell, target.cell, foeRange[foe.key])) {
-        foe.cell = nextTile(run.map, foe.cell, target.cell);
+        const next = nextTile(run.map, foe.cell, target.cell);
+        if (!run.enemies.some(other => other !== foe && other.hp > 0 && other.cell === next)) foe.cell = next;
       }
     }
     reveal(run);
